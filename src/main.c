@@ -1,10 +1,74 @@
+
 #include "shell.h"
+#include <readline/readline.h>
+#include <readline/history.h>
+
+
+
+// Commands available for completion
+char *commands[] = {
+    "cd",
+    "exit",
+    "help",
+    "jobs",
+    "history",
+    "pwd",
+    "ls",
+    "clear",
+    "mkdir",
+    "cat",
+    "echo",
+    "grep",
+    "gcc",
+    "nano",
+    "whoami",
+    NULL
+};
+
+// Generate command suggestions
+char *command_generator(const char *text, int state) {
+
+    static int index;
+    static int length;
+
+    if (state == 0) {
+        index = 0;
+        length = strlen(text);
+    }
+
+    while (commands[index] != NULL) {
+
+        char *name = commands[index++];
+
+        if (strncmp(name, text, length) == 0) {
+            return strdup(name);
+        }
+    }
+
+    return NULL;
+}
+
+// Handle command and filename completion
+char **command_completion(const char *text, int start, int end) {
+
+    (void)end;
+
+    if (start == 0) {
+        return rl_completion_matches(text, command_generator);
+    }
+
+    return rl_completion_matches(text, rl_filename_completion_function);
+}
+
 
 int main() {
     char* cmdline;
     char** arglist;
 
-    while ((cmdline = read_cmd(PROMPT, stdin)) != NULL) {
+
+rl_attempted_completion_function = command_completion;
+
+    while ((cmdline = readline(PROMPT)) != NULL) {
 
         // Check if user entered !n
         if (cmdline[0] == '!') {
@@ -42,8 +106,9 @@ int main() {
             printf("%s\n", cmdline);
         }
 
-        // Store command in history
+        // Add non-empty command to Readline history
         if (cmdline[0] != '\0') {
+            add_history(cmdline);
             store_command_history(cmdline);
         }
 
@@ -69,3 +134,4 @@ int main() {
     printf("\nShell exited.\n");
     return 0;
 }
+
