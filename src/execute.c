@@ -1,18 +1,22 @@
 
 #include "shell.h"
 #include <fcntl.h>
+#include <signal.h>
+#include <sys/stat.h>
 
-int execute(char* arglist[], int background) {
-    int status;
-    int input_fd = -1;
-    int output_fd = -1;
-    int pipe_fd[2];
+/* Add background process to job list */
+extern void add_job(pid_t pid);
+
+/* Execute command with optional pipe and redirection */
+int execute(char **arglist, int background) {
+    if (arglist == NULL || arglist[0] == NULL)
+        return 0;
 
     int pipe_pos = -1;
     int input_pos = -1;
     int output_pos = -1;
 
-    /* Find special symbols */
+    /* Find pipe and redirection operators */
     for (int i = 0; arglist[i] != NULL; i++) {
         if (strcmp(arglist[i], "|") == 0)
             pipe_pos = i;
@@ -22,165 +26,170 @@ int execute(char* arglist[], int background) {
             output_pos = i;
     }
 
-    /* Handle a single pipe */
+    /* Handle pipe */
     if (pipe_pos != -1) {
-        if (pipe_pos == 0 || arglist[pipe_pos + 1] == NULL) {
-            fprintf(stderr, "Invalid pipe command\n");
-            return -1;
-        }
+        int fd[2];
 
-        char** right_command = &arglist[pipe_pos + 1];
-        arglist[pipe_pos] = NULL;
-
-        if (pipe(pipe_fd) == -1) {
+        if (pipe(fd) == -1) {
             perror("pipe");
-            return -1;
+            return 1;
         }
+
+        arglist[pipe_pos] = NULL;
+        char **left_cmd = arglist;
+        char **right_cmd = &arglist[pipe_pos + 1];
 
         pid_t pid1 = fork();
 
-        if (pid1 == -1) {
+        if (pid1 < 0) {
             perror("fork");
-            close(pipe_fd[0]);
-            close(pipe_fd[1]);
-            return -1;
+            close(fd[0]);
+            close(fd[1]);
+            return 1;
         }
 
         if (pid1 == 0) {
-            close(pipe_fd[0]);
+            close(fd[0]);
 
-            dup2(pipe_fd[1], STDOUT_FILENO);
-            close(pipe_fd[1]);
+            if (dup2(fd[1], STDOUT_FILENO) == -1) {
+                perror("dup2");
+                exit(1);
+            }
 
-            execvp(arglist[0], arglist);
-            perror("Command failed");
-            exit(1);
+            close(fd[1]);
+            execvp(left_cmd[0], left_cmd);
+            perror("execvp");
+            exit(127);
         }
 
         pid_t pid2 = fork();
 
-        if (pid2 == -1) {
+        if (pid2 < 0) {
             perror("fork");
-            close(pipe_fd[0]);
-            close(pipe_fd[1]);
+            close(fd[0]);
+            close(fd[1]);
             waitpid(pid1, NULL, 0);
-            return -1;
+            return 1;
         }
 
         if (pid2 == 0) {
-            close(pipe_fd[1]);
+            close(fd[1]);
 
-            dup2(pipe_fd[0], STDIN_FILENO);
-            close(pipe_fd[0]);
+            if (dup2(fd[0], STDIN_FILENO) == -1) {
+                perror("dup2");
+                exit(1);
+            }
 
-            execvp(right_command[0], right_command);
-            perror("Command failed");
-            exit(1);
+            close(fd[0]);
+            execvp(right_cmd[0], right_cmd);
+            perror("execvp");
+            exit(127);
         }
 
-        close(pipe_fd[0]);
-        close(pipe_fd[1]);
+        close(fd[0]);
+        close(fd[1]);
+
+        int status1;
+        int status2;
+
+        waitpid(pid1, &status1, 0);
 
         if (background) {
             add_job(pid2);
-            waitpid(pid1, &status, 0);
-        }
-        else {
-            waitpid(pid1, &status, 0);
-            waitpid(pid2, &status, 0);
+            return 0;
         }
 
-        return 0;
+        waitpid(pid2, &status2, 0);
+
+        if (WIFEXITED(status2))
+            return WEXITSTATUS(status2);
+
+        return 1;
     }
 
-    /* Handle input redirection */
-    if (input_pos != -1) {
-        if (arglist[input_pos + 1] == NULL) {
-            fprintf(stderr, "Input filename missing\n");
-            return -1;
-        }
+    /* Handle input and output redirection */
+    pid_t pid = fork();
 
-        input_fd = open(arglist[input_pos + 1], O_RDONLY);
-
-        if (input_fd == -1) {
-            perror("Input file");
-            return -1;
-        }
-
-        arglist[input_pos] = NULL;
-    }
-
-    /* Handle output redirection */
-    if (output_pos != -1) {
-        if (arglist[output_pos + 1] == NULL) {
-            fprintf(stderr, "Output filename missing\n");
-            if (input_fd != -1)
-                close(input_fd);
-            return -1;
-        }
-
-        output_fd = open(arglist[output_pos + 1],
-                         O_WRONLY | O_CREAT | O_TRUNC, 0644);
-
-        if (output_fd == -1) {
-            perror("Output file");
-
-            if (input_fd != -1)
-                close(input_fd);
-
-            return -1;
-        }
-
-        arglist[output_pos] = NULL;
-    }
-
-    if (arglist[0] == NULL) {
-        fprintf(stderr, "Missing command\n");
-
-        if (input_fd != -1) close(input_fd);
-        if (output_fd != -1) close(output_fd);
-
-        return -1;
-    }
-
-    pid_t cpid = fork();
-
-    if (cpid == -1) {
+    if (pid < 0) {
         perror("fork");
-
-        if (input_fd != -1) close(input_fd);
-        if (output_fd != -1) close(output_fd);
-
-        return -1;
+        return 1;
     }
 
-    if (cpid == 0) {
+    if (pid == 0) {
+        /* Input redirection */
+        if (input_pos != -1) {
+            if (arglist[input_pos + 1] == NULL) {
+                fprintf(stderr, "Missing input filename\n");
+                exit(1);
+            }
 
-        if (input_fd != -1) {
-            dup2(input_fd, STDIN_FILENO);
-            close(input_fd);
+            int fd = open(arglist[input_pos + 1], O_RDONLY);
+
+            if (fd < 0) {
+                perror("open");
+                exit(1);
+            }
+
+            if (dup2(fd, STDIN_FILENO) == -1) {
+                perror("dup2");
+                close(fd);
+                exit(1);
+            }
+
+            close(fd);
+            arglist[input_pos] = NULL;
         }
 
-        if (output_fd != -1) {
-            dup2(output_fd, STDOUT_FILENO);
-            close(output_fd);
+        /* Output redirection */
+        if (output_pos != -1) {
+            if (arglist[output_pos + 1] == NULL) {
+                fprintf(stderr, "Missing output filename\n");
+                exit(1);
+            }
+
+            int fd = open(arglist[output_pos + 1],
+                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+            if (fd < 0) {
+                perror("open");
+                exit(1);
+            }
+
+            if (dup2(fd, STDOUT_FILENO) == -1) {
+                perror("dup2");
+                close(fd);
+                exit(1);
+            }
+
+            close(fd);
+            arglist[output_pos] = NULL;
         }
 
         execvp(arglist[0], arglist);
-        perror("Command failed");
-        exit(1);
+        perror("execvp");
+        exit(127);
     }
 
-    if (input_fd != -1) close(input_fd);
-    if (output_fd != -1) close(output_fd);
-
+    /* Background execution */
     if (background) {
-        add_job(cpid);
-    }
-    else {
-        waitpid(cpid, &status, 0);
+        add_job(pid);
+        return 0;
     }
 
-    return 0;
+    /* Foreground execution */
+    int status;
+
+    if (waitpid(pid, &status, 0) == -1) {
+        perror("waitpid");
+        return 1;
+    }
+
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+
+    if (WIFSIGNALED(status))
+        return 128 + WTERMSIG(status);
+
+    return 1;
 }
 
