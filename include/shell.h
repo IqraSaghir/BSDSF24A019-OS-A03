@@ -19,4 +19,8 @@ char* read_cmd(char* prompt, FILE* fp);
 char** tokenize(char* cmdline);
 int execute(char** arglist);
 int handle_builtin(char** arglist);
+
+void store_command_history(const char* command);
+void display_command_history();
+char* get_command_history(int number);
 #endif // SHELL_H

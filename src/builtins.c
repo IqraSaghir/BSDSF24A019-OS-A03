@@ -40,5 +40,13 @@ int handle_builtin(char** arglist) {
         return 1;
     }
 
+// Check history command
+if (strcmp(arglist[0], "history") == 0) {
+    display_command_history();
+    return 1;
+}
+
+
+
     return 0;
 }
