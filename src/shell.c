@@ -4,7 +4,7 @@
 char* read_cmd(char* prompt, FILE* fp) {
     printf("%s", prompt);
 
-    char* cmdline = (char*)malloc(sizeof(char) * MAX_LEN);
+    char* cmdline = malloc(MAX_LEN);
 
     if (cmdline == NULL) {
         perror("malloc");
@@ -30,18 +30,16 @@ char* read_cmd(char* prompt, FILE* fp) {
     }
 
     cmdline[pos] = '\0';
-
     return cmdline;
 }
 
 
 char** tokenize(char* cmdline) {
-
     if (cmdline == NULL || cmdline[0] == '\0') {
         return NULL;
     }
 
-    char** arglist = (char**)calloc(MAXARGS + 1, sizeof(char*));
+    char** arglist = calloc(MAXARGS + 1, sizeof(char*));
 
     if (arglist == NULL) {
         perror("calloc");
@@ -53,7 +51,6 @@ char** tokenize(char* cmdline) {
 
     while (*cp != '\0' && argnum < MAXARGS) {
 
-        /* Skip spaces and tabs */
         while (*cp == ' ' || *cp == '\t') {
             cp++;
         }
@@ -62,10 +59,11 @@ char** tokenize(char* cmdline) {
             break;
         }
 
-        /* Recognize redirection and pipe symbols */
-        if (*cp == '<' || *cp == '>' || *cp == '|') {
+        /* Recognize shell operators */
+        if (*cp == '<' || *cp == '>' || *cp == '|' ||
+            *cp == ';' || *cp == '&') {
 
-            arglist[argnum] = (char*)malloc(2);
+            arglist[argnum] = malloc(2);
 
             if (arglist[argnum] == NULL) {
                 perror("malloc");
@@ -77,25 +75,21 @@ char** tokenize(char* cmdline) {
 
             cp++;
             argnum++;
-
-        } else {
-
+        }
+        else {
             char* start = cp;
 
-            /* Read until space or special symbol */
             while (*cp != '\0' &&
-                   *cp != ' ' &&
-                   *cp != '\t' &&
-                   *cp != '<' &&
-                   *cp != '>' &&
-                   *cp != '|') {
-
+                   *cp != ' ' && *cp != '\t' &&
+                   *cp != '<' && *cp != '>' &&
+                   *cp != '|' && *cp != ';' &&
+                   *cp != '&') {
                 cp++;
             }
 
             int len = cp - start;
 
-            arglist[argnum] = (char*)malloc(len + 1);
+            arglist[argnum] = malloc(len + 1);
 
             if (arglist[argnum] == NULL) {
                 perror("malloc");
@@ -115,7 +109,6 @@ char** tokenize(char* cmdline) {
     }
 
     arglist[argnum] = NULL;
-
     return arglist;
 }
 

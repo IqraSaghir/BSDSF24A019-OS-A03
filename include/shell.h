@@ -1,3 +1,4 @@
+
 #ifndef SHELL_H
 #define SHELL_H
 
@@ -14,13 +15,19 @@
 #define ARGLEN 30
 #define PROMPT "FCIT> "
 
-// Function prototypes
 char* read_cmd(char* prompt, FILE* fp);
 char** tokenize(char* cmdline);
-int execute(char** arglist);
+int execute(char** arglist, int background);
 int handle_builtin(char** arglist);
 
 void store_command_history(const char* command);
-void display_command_history();
+void display_command_history(void);
 char* get_command_history(int number);
-#endif // SHELL_H
+
+/* Background job management */
+void add_job(pid_t pid);
+void reap_jobs(void);
+void display_jobs(void);
+
+#endif
+

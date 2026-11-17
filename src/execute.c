@@ -2,7 +2,7 @@
 #include "shell.h"
 #include <fcntl.h>
 
-int execute(char* arglist[]) {
+int execute(char* arglist[], int background) {
     int status;
     int input_fd = -1;
     int output_fd = -1;
@@ -22,8 +22,14 @@ int execute(char* arglist[]) {
             output_pos = i;
     }
 
-    /* Handle pipe */
+    /* Handle a single pipe */
     if (pipe_pos != -1) {
+        if (pipe_pos == 0 || arglist[pipe_pos + 1] == NULL) {
+            fprintf(stderr, "Invalid pipe command\n");
+            return -1;
+        }
+
+        char** right_command = &arglist[pipe_pos + 1];
         arglist[pipe_pos] = NULL;
 
         if (pipe(pipe_fd) == -1) {
@@ -33,8 +39,16 @@ int execute(char* arglist[]) {
 
         pid_t pid1 = fork();
 
+        if (pid1 == -1) {
+            perror("fork");
+            close(pipe_fd[0]);
+            close(pipe_fd[1]);
+            return -1;
+        }
+
         if (pid1 == 0) {
             close(pipe_fd[0]);
+
             dup2(pipe_fd[1], STDOUT_FILENO);
             close(pipe_fd[1]);
 
@@ -45,14 +59,21 @@ int execute(char* arglist[]) {
 
         pid_t pid2 = fork();
 
+        if (pid2 == -1) {
+            perror("fork");
+            close(pipe_fd[0]);
+            close(pipe_fd[1]);
+            waitpid(pid1, NULL, 0);
+            return -1;
+        }
+
         if (pid2 == 0) {
             close(pipe_fd[1]);
+
             dup2(pipe_fd[0], STDIN_FILENO);
             close(pipe_fd[0]);
 
-            execvp(arglist[pipe_pos + 1],
-                   &arglist[pipe_pos + 1]);
-
+            execvp(right_command[0], right_command);
             perror("Command failed");
             exit(1);
         }
@@ -60,14 +81,25 @@ int execute(char* arglist[]) {
         close(pipe_fd[0]);
         close(pipe_fd[1]);
 
-        waitpid(pid1, &status, 0);
-        waitpid(pid2, &status, 0);
+        if (background) {
+            add_job(pid2);
+            waitpid(pid1, &status, 0);
+        }
+        else {
+            waitpid(pid1, &status, 0);
+            waitpid(pid2, &status, 0);
+        }
 
         return 0;
     }
 
     /* Handle input redirection */
     if (input_pos != -1) {
+        if (arglist[input_pos + 1] == NULL) {
+            fprintf(stderr, "Input filename missing\n");
+            return -1;
+        }
+
         input_fd = open(arglist[input_pos + 1], O_RDONLY);
 
         if (input_fd == -1) {
@@ -80,25 +112,45 @@ int execute(char* arglist[]) {
 
     /* Handle output redirection */
     if (output_pos != -1) {
+        if (arglist[output_pos + 1] == NULL) {
+            fprintf(stderr, "Output filename missing\n");
+            if (input_fd != -1)
+                close(input_fd);
+            return -1;
+        }
+
         output_fd = open(arglist[output_pos + 1],
                          O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
         if (output_fd == -1) {
             perror("Output file");
+
             if (input_fd != -1)
                 close(input_fd);
+
             return -1;
         }
 
         arglist[output_pos] = NULL;
     }
 
+    if (arglist[0] == NULL) {
+        fprintf(stderr, "Missing command\n");
+
+        if (input_fd != -1) close(input_fd);
+        if (output_fd != -1) close(output_fd);
+
+        return -1;
+    }
+
     pid_t cpid = fork();
 
     if (cpid == -1) {
-        perror("fork failed");
+        perror("fork");
+
         if (input_fd != -1) close(input_fd);
         if (output_fd != -1) close(output_fd);
+
         return -1;
     }
 
@@ -122,7 +174,12 @@ int execute(char* arglist[]) {
     if (input_fd != -1) close(input_fd);
     if (output_fd != -1) close(output_fd);
 
-    waitpid(cpid, &status, 0);
+    if (background) {
+        add_job(cpid);
+    }
+    else {
+        waitpid(cpid, &status, 0);
+    }
 
     return 0;
 }

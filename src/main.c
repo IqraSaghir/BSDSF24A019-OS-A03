@@ -4,30 +4,15 @@
 #include <readline/history.h>
 
 
-
-// Commands available for completion
 char *commands[] = {
-    "cd",
-    "exit",
-    "help",
-    "jobs",
-    "history",
-    "pwd",
-    "ls",
-    "clear",
-    "mkdir",
-    "cat",
-    "echo",
-    "grep",
-    "gcc",
-    "nano",
-    "whoami",
+    "cd", "exit", "help", "jobs", "history",
+    "pwd", "ls", "clear", "mkdir", "cat",
+    "echo", "grep", "gcc", "nano", "whoami",
     NULL
 };
 
-// Generate command suggestions
-char *command_generator(const char *text, int state) {
 
+char *command_generator(const char *text, int state) {
     static int index;
     static int length;
 
@@ -37,7 +22,6 @@ char *command_generator(const char *text, int state) {
     }
 
     while (commands[index] != NULL) {
-
         char *name = commands[index++];
 
         if (strncmp(name, text, length) == 0) {
@@ -48,9 +32,8 @@ char *command_generator(const char *text, int state) {
     return NULL;
 }
 
-// Handle command and filename completion
-char **command_completion(const char *text, int start, int end) {
 
+char **command_completion(const char *text, int start, int end) {
     (void)end;
 
     if (start == 0) {
@@ -61,22 +44,43 @@ char **command_completion(const char *text, int start, int end) {
 }
 
 
-int main() {
+/* Execute one command segment */
+void run_segment(char** command, int background) {
+    if (command == NULL || command[0] == NULL) {
+        return;
+    }
+
+    if (handle_builtin(command) == 0) {
+        execute(command, background);
+    }
+}
+
+
+int main(void) {
     char* cmdline;
     char** arglist;
 
+    rl_attempted_completion_function = command_completion;
 
-rl_attempted_completion_function = command_completion;
+    while (1) {
 
-    while ((cmdline = readline(PROMPT)) != NULL) {
+        /* Reap completed background processes before each prompt */
+        reap_jobs();
 
-        // Check if user entered !n
+        cmdline = readline(PROMPT);
+
+        if (cmdline == NULL) {
+            break;
+        }
+
+        /* Handle !n history command */
         if (cmdline[0] == '!') {
-
             char* endptr;
             long number = strtol(cmdline + 1, &endptr, 10);
 
-            if (endptr == cmdline + 1 || *endptr != '\0' || number < 1) {
+            if (endptr == cmdline + 1 ||
+                *endptr != '\0' || number < 1) {
+
                 printf("Invalid history command.\n");
                 free(cmdline);
                 continue;
@@ -90,7 +94,6 @@ rl_attempted_completion_function = command_completion;
                 continue;
             }
 
-            // Copy the previous command
             char* new_command = malloc(strlen(old_command) + 1);
 
             if (new_command == NULL) {
@@ -106,22 +109,51 @@ rl_attempted_completion_function = command_completion;
             printf("%s\n", cmdline);
         }
 
-        // Add non-empty command to Readline history
         if (cmdline[0] != '\0') {
             add_history(cmdline);
             store_command_history(cmdline);
         }
 
-        // Tokenize command
-        if ((arglist = tokenize(cmdline)) != NULL) {
+        arglist = tokenize(cmdline);
 
-            // Check built-in commands first
-            if (handle_builtin(arglist) == 0) {
-                execute(arglist);
+        if (arglist != NULL) {
+
+            /* Count tokens before inserting NULL separators */
+            int token_count = 0;
+
+            while (arglist[token_count] != NULL) {
+                token_count++;
             }
 
-            // Free allocated memory
-            for (int i = 0; arglist[i] != NULL; i++) {
+            int start = 0;
+
+            for (int i = 0; i <= token_count; i++) {
+
+                if (i == token_count ||
+                    strcmp(arglist[i], ";") == 0) {
+
+                    if (i < token_count) {
+                        arglist[i] = NULL;
+                    }
+
+                    if (start < i) {
+                        int background = 0;
+
+                        /* Check whether segment ends with & */
+                        if (strcmp(arglist[i - 1], "&") == 0) {
+                            arglist[i - 1] = NULL;
+                            background = 1;
+                        }
+
+                        run_segment(&arglist[start], background);
+                    }
+
+                    start = i + 1;
+                }
+            }
+
+            /* Free every original token */
+            for (int i = 0; i < token_count; i++) {
                 free(arglist[i]);
             }
 
