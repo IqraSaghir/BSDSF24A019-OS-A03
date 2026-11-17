@@ -4,7 +4,7 @@
 #include <readline/history.h>
 
 char *commands[] = {
-    "cd", "exit", "help", "jobs", "history",
+    "cd", "exit", "help", "jobs", "history", "set",
     "pwd", "ls", "clear", "mkdir", "cat",
     "echo", "grep", "gcc", "nano", "whoami",
     "true", "false", NULL
@@ -38,21 +38,32 @@ char **command_completion(const char *text, int start, int end) {
     return rl_completion_matches(text, rl_filename_completion_function);
 }
 
+
 void run_segment(char **command, int background) {
     if (command == NULL || command[0] == NULL)
         return;
+
+    expand_variables(command);
 
     if (handle_builtin(command) == 0)
         execute(command, background);
 }
 
+
+
+
+
+
+
 /* Run a simple command and return its exit status */
+
 int run_condition(char *condition) {
     char **args = tokenize(condition);
 
     if (args == NULL)
         return 1;
 
+    expand_variables(args);
     int result = execute(args, 0);
 
     for (int i = 0; args[i] != NULL; i++)
@@ -62,6 +73,19 @@ int run_condition(char *condition) {
 
     return result;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* Execute an if-then-else-fi block */
 void handle_if_block(char *condition) {

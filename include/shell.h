@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <ctype.h>
 
 #define MAX_LEN 512
 #define MAXARGS 10
@@ -24,10 +25,15 @@ void store_command_history(const char* command);
 void display_command_history(void);
 char* get_command_history(int number);
 
-/* Background job management */
 void add_job(pid_t pid);
 void reap_jobs(void);
 void display_jobs(void);
+
+/* Shell variable functions */
+void expand_variables(char** arglist);
+int is_variable_assignment(const char* command);
+int set_shell_variable(const char* assignment);
+void display_shell_variables(void);
 
 #endif
 
