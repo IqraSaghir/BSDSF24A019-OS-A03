@@ -1,4 +1,3 @@
-
 #include "shell.h"
 
 typedef struct Job {
@@ -77,7 +76,7 @@ void display_jobs(void) {
     }
 }
 
-/* Check whether command is a variable assignment */
+/* Check variable assignment syntax */
 int is_variable_assignment(const char* command) {
     if (command == NULL)
         return 0;
@@ -132,7 +131,7 @@ int set_shell_variable(const char* assignment) {
 
     strcpy(value, value_start);
 
-    /* Remove matching surrounding quotes */
+    /* Remove surrounding quotes */
     if (value_length >= 2 &&
         ((value[0] == '"' && value[value_length - 1] == '"') ||
          (value[0] == '\'' && value[value_length - 1] == '\''))) {
@@ -185,7 +184,7 @@ void display_shell_variables(void) {
     }
 }
 
-/* Expand $VARIABLE inside command arguments */
+/* Expand variables beginning with $ */
 void expand_variables(char** arglist) {
     if (arglist == NULL)
         return;
@@ -219,6 +218,8 @@ void expand_variables(char** arglist) {
 
                 if (name == NULL) {
                     perror("malloc");
+                    free(expanded);
+                    expanded = NULL;
                     break;
                 }
 
@@ -257,6 +258,7 @@ void expand_variables(char** arglist) {
                 memcpy(expanded + used, value, value_length);
                 used += value_length;
                 j = end;
+
                 free(name);
             }
             else {
@@ -286,7 +288,7 @@ void expand_variables(char** arglist) {
     }
 }
 
-/* Built-in command handler */
+/* Handle built-in commands */
 int handle_builtin(char** arglist) {
     if (arglist == NULL || arglist[0] == NULL)
         return 1;
@@ -307,12 +309,14 @@ int handle_builtin(char** arglist) {
 
     if (strcmp(arglist[0], "help") == 0) {
         printf("Available built-in commands:\n");
-        printf("exit    - Exit the shell\n");
-        printf("cd      - Change directory\n");
-        printf("help    - Display help\n");
-        printf("jobs    - Show background jobs\n");
-        printf("history - Display command history\n");
-        printf("set     - Display shell variables\n");
+        printf("exit       - Exit the shell\n");
+        printf("cd         - Change directory\n");
+        printf("help       - Display help\n");
+        printf("jobs       - Show background jobs\n");
+        printf("history    - Display command history\n");
+        printf("set        - Display shell variables\n");
+        printf("NAME=value - Create or update a variable\n");
+        printf("$NAME      - Expand a variable in commands\n");
 
         return 1;
     }
